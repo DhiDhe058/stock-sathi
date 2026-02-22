@@ -7,27 +7,47 @@ import asyncio
 import requests
 import io
 import os
+import time
 
-# --- CONFIGURATION ---
-GENAI_API_KEY = st.secrets["GENAI_API_KEY"]
+# --- LOCAL vs LIVE SECURITY ---
+try:
+    GENAI_API_KEY = "AIzaSyCPiNFtcSQNn2awdwCwxADK_pfOikbHrak"
+except:
+    # PASTE YOUR FREE TIER API KEY HERE JUST FOR LOCAL TESTING
+    GENAI_API_KEY = "PASTE_YOUR_FREE_KEY_HERE"
+
 genai.configure(api_key=GENAI_API_KEY)
-# Using the fast, efficient Flash model
 model = genai.GenerativeModel('gemini-3-flash-preview')
 
-# --- THE 3-STRIKE TRACKER (Session State) ---
-# Note: For a true production launch, we will upgrade this to Browser Cookies.
-# For now, this handles the limit during your active testing session.
 if 'usage_count' not in st.session_state:
     st.session_state.usage_count = 0
 
-# --- THE CACHE SYSTEM (Option B) ---
-# @st.cache_data tells Streamlit to remember the output of this function.
-# If a user types the exact same company name, it skips the heavy lifting!
+# --- THE STRICT BOUNCER ---
+@st.cache_data(show_spinner=False)
+def verify_company_name(input_text):
+    prompt = f"""
+    You are a strict data validation bot. The user entered this exact text: '{input_text}'. 
+    Is this EXACT string the name of a publicly traded Indian company? 
+    If it contains conversational words, questions, or extra gibberish (like 'kaun', 'hai', 'tell me about'), it is INVALID. 
+    Reply with EXACTLY one word: YES or NO.
+    """
+    
+    for attempt in range(3):
+        try:
+            response = model.generate_content(prompt)
+            return "YES" in response.text.strip().upper()
+        except Exception as e:
+            if "429" in str(e) or "Quota" in str(e):
+                time.sleep(5)  
+            else:
+                return True 
+    return True 
+
+# --- THE ANALYZER WITH AUTO-RETRY ---
 @st.cache_data(show_spinner=False)
 def analyze_company(company_name):
     ddgs = DDGS()
     
-    # Step A: Fetch News
     news_text = "Latest News:\n"
     try:
         news_results = ddgs.news(company_name, timelimit="w", max_results=3)
@@ -36,104 +56,111 @@ def analyze_company(company_name):
     except Exception:
         news_text += "No recent news found.\n"
 
-    # Step B: Auto-Fetch PDF from BSE
     pdf_text = ""
     try:
-        # The Search Engine Hack
         search_query = f"{company_name} investor presentation filetype:pdf site:bseindia.com"
         pdf_results = ddgs.text(search_query, max_results=1)
         
         if pdf_results and "href" in pdf_results[0]:
             pdf_url = pdf_results[0]["href"]
-            # We disguise our script as a standard web browser so BSE doesn't block it
-            headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
+            headers = {'User-Agent': 'Mozilla/5.0'}
             response = requests.get(pdf_url, headers=headers, timeout=10)
             
             if response.status_code == 200:
-                # Read the downloaded PDF directly from memory
                 pdf_file = io.BytesIO(response.content)
                 reader = PdfReader(pdf_file)
                 for page in reader.pages[:10]:
                     pdf_text += page.extract_text() or ""
     except Exception:
-        pass # If it fails, we just rely on the news.
+        pass 
 
     if not pdf_text:
-        pdf_text = "[System Note: No presentation PDF found. Base the analysis solely on the news provided.]"
+        pdf_text = "[System Note: No presentation PDF found. Base analysis on news.]"
 
-    # Step C: The Upgraded AI Prompt
     prompt = f"""
     Act as a financial friend to a villager in India. 
     Analyze the company: {company_name}.
-    
     News Context: {news_text}
     Presentation Data: {pdf_text}
     
-    Follow these STRICT instructions:
-    1. Start your response EXACTLY with: "Based on the quarterly result published on [Insert Date found in data, or 'recent news' if no date found]..."
-    2. Explain the 3 biggest positives and the 3 biggest red flags in simple Hindi.
-    3. At the very end, give a Verdict Tag in English: [High Growth], [Stable Growth], or [Slow Growth].
-    4. CRITICAL: Do not use any asterisks (*), hashes (#), or bullet points. Write only plain text.
-    5. Keep it under 150 words.
+    1. Start EXACTLY with: "Analyzing [Insert Exact Company Name]. Based on the quarterly result published on [Date or 'recent news']..."
+    2. Explain 3 positives and 3 red flags in simple Hindi.
+    3. End with Verdict Tag in English: [High Growth], [Stable Growth], or [Slow Growth].
+    4. NO asterisks (*), hashes (#), or bullets. Plain text only. Keep under 150 words.
     """
     
-    ai_response = model.generate_content(prompt)
-    summary_text = ai_response.text
-    
-    # Step D: Audio Generation
+    summary_text = ""
+    for attempt in range(3):
+        try:
+            summary_text = model.generate_content(prompt).text
+            break 
+        except Exception as e:
+            if "429" in str(e) or "Quota" in str(e):
+                if attempt < 2: 
+                    time.sleep(8) 
+                else:
+                    raise Exception("The AI is currently serving too many users. Please try again in 1 minute.")
+            else:
+                raise e 
+
     cleaned_text = summary_text.replace("*", "").replace("#", "").replace("_", "")
-    # Create a unique audio file name for this company
-    audio_path = f"{company_name.replace(' ', '_')}_summary.mp3"
+    temp_audio_path = f"temp_{company_name.replace(' ', '_')}.mp3"
     
     async def generate_audio():
         communicate = edge_tts.Communicate(cleaned_text, "hi-IN-MadhurNeural")
-        await communicate.save(audio_path)
+        await communicate.save(temp_audio_path)
     
     asyncio.run(generate_audio())
     
-    return summary_text, audio_path
+    with open(temp_audio_path, "rb") as f:
+        audio_bytes = f.read()
+    os.remove(temp_audio_path)
+    
+    return summary_text, audio_bytes
 
 # --- THE UI SETUP ---
 st.set_page_config(page_title="Stock Sathi", page_icon="📈")
 st.title("📈 Stock Sathi")
-
-# The Custom Welcome Message
 st.markdown("### Do you want to know about a company/stock?")
 st.write("Type the name below and we will get you a quick summary for it, right away.")
 
-# Check the limit
+counter_box = st.empty()
+counter_box.write(f"Remaining searches today: **{3 - st.session_state.usage_count}/3**")
+
 if st.session_state.usage_count >= 3:
     st.error("🔒 You have reached your limit of 3 companies for today. Please come back tomorrow!")
     st.stop()
 
-st.write(f"Remaining searches today: **{3 - st.session_state.usage_count}/3**")
-
-# --- USER INPUT ---
-company_input = st.text_input("Enter Company Name (e.g., Reliance, Zomato)")
+# Updated UI text to guide the user on ambiguous names
+company_input = st.text_input("Enter Company Name (Be specific: e.g., HDFC Bank, ICICI AMC)")
 
 if st.button("Get Quick Summary"):
     if not company_input:
         st.warning("Please enter a company name first.")
         st.stop()
 
-    st.session_state.usage_count += 1
+    with st.spinner("Checking company name..."):
+        is_valid = verify_company_name(company_input)
+        
+    if not is_valid:
+        st.error("❌ Invalid Input: Please enter a valid Indian stock market company name.")
+        st.stop()
 
-    with st.spinner(f"Scouring the web and analyzing {company_input}... this takes about 10 seconds."):
+    st.session_state.usage_count += 1
+    counter_box.write(f"Remaining searches today: **{3 - st.session_state.usage_count}/3**")
+
+    with st.spinner(f"Scouring the web and analyzing {company_input}... this takes about 15-20 seconds."):
         try:
-            # This calls the cached function!
-            final_text, final_audio = analyze_company(company_input)
-            
+            final_text, final_audio_bytes = analyze_company(company_input)
             st.success("Analysis Complete!")
             st.write(final_text)
-            
             st.subheader("🎧 Listen to Summary")
-            st.audio(final_audio, format="audio/mp3", autoplay=True)
+            st.audio(final_audio_bytes, format="audio/mp3", autoplay=True)
             
         except Exception as e:
-            st.error(f"Something went wrong while analyzing. Please try another company. Error: {e}")
-            # Refund the usage count if it crashes
+            st.error(f"{e}")
             st.session_state.usage_count -= 1 
+            counter_box.write(f"Remaining searches today: **{3 - st.session_state.usage_count}/3**")
 
-# --- THE LEGAL SHIELD ---
 st.write("---")
-st.caption("⚠️ **Disclaimer:** This analysis is generated by AI and may contain errors. It is for educational purposes only and does not constitute financial advice. Please verify data and consult a SEBI-registered investment advisor before making any decisions.")
+st.caption("⚠️ **Disclaimer:** This analysis is generated by AI and may contain errors. It is for educational purposes only and does not constitute financial advice.")
