@@ -11,7 +11,7 @@ import time
 
 # --- LOCAL vs LIVE SECURITY ---
 try:
-    GENAI_API_KEY = "AIzaSyCPiNFtcSQNn2awdwCwxADK_pfOikbHrak"
+    GENAI_API_KEY = st.secrets["GENAI_API_KEY"]
 except:
     # PASTE YOUR FREE TIER API KEY HERE JUST FOR LOCAL TESTING
     GENAI_API_KEY = "PASTE_YOUR_FREE_KEY_HERE"
