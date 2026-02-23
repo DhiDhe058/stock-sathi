@@ -28,16 +28,19 @@ if 'usage_count' not in st.session_state:
 def save_feedback(data_dict):
     try:
         conn = st.connection("gsheets", type=GSheetsConnection)
-        df = conn.read(worksheet="Sheet1")
+        
+        # ⚠️ THE FIX: We must give the bot the direct URL to the spreadsheet!
+        SHEET_URL = "https://docs.google.com/spreadsheets/d/1HdCVtR3TgmBkWNSlvYp0wLZq4Xa7r-T61Y5JzGwH_9c/edit?gid=0#gid=0"
+        
+        df = conn.read(spreadsheet=SHEET_URL, worksheet="Sheet1")
         new_row = pd.DataFrame([data_dict])
         
-        # Append the new row to existing data
         if df.empty:
             updated_df = new_row
         else:
             updated_df = pd.concat([df, new_row], ignore_index=True)
             
-        conn.update(worksheet="Sheet1", data=updated_df)
+        conn.update(spreadsheet=SHEET_URL, worksheet="Sheet1", data=updated_df)
     except Exception as e:
         st.error(f"Could not connect to Google Sheets: {e}")
 
