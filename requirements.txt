@@ -4,3 +4,5 @@ pypdf
 duckduckgo-search
 edge-tts
 requests
+st-gsheets-connection
+pandas
