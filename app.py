@@ -28,11 +28,8 @@ if 'usage_count' not in st.session_state:
 def save_feedback(data_dict):
     try:
         conn = st.connection("gsheets", type=GSheetsConnection)
-        
-        # ⚠️ THE FIX: We must give the bot the direct URL to the spreadsheet!
-        SHEET_URL = "https://docs.google.com/spreadsheets/d/1HdCVtR3TgmBkWNSlvYp0wLZq4Xa7r-T61Y5JzGwH_9c/edit?gid=0#gid=0"
-        
-        df = conn.read(spreadsheet=SHEET_URL, worksheet="Sheet1")
+        # MAKE SURE YOUR SHEET URL IS STILL IN YOUR SECRETS OR PASTED HERE
+        df = conn.read(worksheet="Sheet1")
         new_row = pd.DataFrame([data_dict])
         
         if df.empty:
@@ -40,7 +37,7 @@ def save_feedback(data_dict):
         else:
             updated_df = pd.concat([df, new_row], ignore_index=True)
             
-        conn.update(spreadsheet=SHEET_URL, worksheet="Sheet1", data=updated_df)
+        conn.update(worksheet="Sheet1", data=updated_df)
     except Exception as e:
         st.error(f"Could not connect to Google Sheets: {e}")
 
@@ -64,7 +61,6 @@ def end_of_session_popup():
 # --- THE BILINGUAL DICTIONARY ---
 st.set_page_config(page_title="Stock Sathi", page_icon="📈")
 
-# The Toggle Switch
 is_english = st.toggle("Switch to English / अंग्रेजी में बदलें")
 LANG = "EN" if is_english else "HI"
 
@@ -74,26 +70,22 @@ UI = {
         "desc": "नीचे दी गई सूची से कंपनी चुनें और हम तुरंत उसका सारांश देंगे।",
         "select": "कंपनी चुनें (Type to search):",
         "btn": "त्वरित सारांश प्राप्त करें",
-        "pos": "✅ अच्छी बातें",
-        "neg": "🚩 खतरे के संकेत",
-        "verdict": "📌 अंतिम निर्णय:",
         "ai_lang": "simple Hindi",
-        "voice": "hi-IN-MadhurNeural"
+        "voice": "hi-IN-MadhurNeural",
+        "verdict_text": "अंतिम निर्णय"
     },
     "EN": {
         "title": "📈 Stock Sathi",
         "desc": "Select a company from the list below for a quick summary.",
         "select": "Select Company (Type to search):",
         "btn": "Get Quick Summary",
-        "pos": "✅ Positives",
-        "neg": "🚩 Red Flags",
-        "verdict": "📌 Verdict:",
         "ai_lang": "simple English",
-        "voice": "en-IN-PrabhatNeural"
+        "voice": "en-IN-PrabhatNeural",
+        "verdict_text": "End Result"
     }
 }
 
-# --- THE ANALYZER (UPGRADED FOR COLUMNS) ---
+# --- THE ANALYZER (SIMPLIFIED & FOOLPROOF) ---
 @st.cache_data(show_spinner=False)
 def analyze_company(company_name, language_code):
     ddgs = DDGS()
@@ -121,20 +113,24 @@ def analyze_company(company_name, language_code):
     except:
         pass 
 
-    # 💥 THE STRICT PROMPT FIX: Yelling at the AI to follow the rules
+    # THE NEW, BULLETPROOF PROMPT
     prompt = f"""
     Analyze {company_name} using this news: {news_text} and presentation: {pdf_text}.
     Write entirely in {UI[language_code]['ai_lang']}.
     
-    YOU MUST STRICTLY USE EXACTLY THREE VERTICAL PIPES (|||) TO SEPARATE THE 4 SECTIONS BELOW. DO NOT USE MARKDOWN FORMATTING.
+    Structure your response EXACTLY like this layout below. Do not deviate.
     
-    [Act as a financial friend. "Analyzing {company_name}..." Keep under 100 words.]
-    |||
-    [List 3 Positives simply]
-    |||
-    [List 3 Red Flags simply]
-    |||
-    [Verdict: High Growth / Stable Growth / Slow Growth]
+    [Write a brief 3-sentence introduction analyzing {company_name}]
+    
+    ✅ [Good point 1]
+    ✅ [Good point 2]
+    ✅ [Good point 3]
+    
+    🚩 [Red flag 1]
+    🚩 [Red flag 2]
+    🚩 [Red flag 3]
+    
+    **{UI[language_code]['verdict_text']}: [Choose one: High Growth / Stable Growth / Slow Growth]**
     """
     
     summary_text = ""
@@ -148,25 +144,11 @@ def analyze_company(company_name, language_code):
             else:
                 raise e 
 
-    # 💥 THE FALLBACK FIX: If it fails, show the text instead of "Data error."
-    try:
-        parts = summary_text.split("|||")
-        if len(parts) == 4:
-            audio_script = parts[0].strip()
-            positives = parts[1].strip()
-            negatives = parts[2].strip()
-            verdict = parts[3].strip()
-        else:
-            raise ValueError("AI missed the pipes.")
-    except Exception:
-        audio_script = summary_text.replace("|||", "")
-        positives = "⚠️ AI formatting glitch. Read the full summary above."
-        negatives = "⚠️ AI formatting glitch. Read the full summary above."
-        verdict = "Pending"
+    if not summary_text:
+        summary_text = "Analysis failed. Please try again."
 
-    # Stitch for audio
-    full_text_to_read = f"{audio_script}. {positives}. {negatives}. {verdict}."
-    cleaned_text = full_text_to_read.replace("*", "").replace("#", "").replace("_", "").replace("|", "")
+    # AUDIO FIX: Strip emojis and bold marks so the voice reads it smoothly
+    cleaned_text = summary_text.replace("*", "").replace("✅", "").replace("🚩", "").replace("#", "")
     temp_audio_path = f"temp_{company_name.replace(' ', '_')}.mp3"
     
     async def generate_audio():
@@ -178,19 +160,18 @@ def analyze_company(company_name, language_code):
         audio_bytes = f.read()
     os.remove(temp_audio_path)
     
-    return audio_script, positives, negatives, verdict, audio_bytes
+    return summary_text, audio_bytes
 
 # --- UI RENDER ---
 st.title(UI[LANG]["title"])
 st.write(UI[LANG]["desc"])
 
-# The Dropdown (Replaces the Bouncer completely)
-company_input = st.selectbox(UI[LANG]["select"], [""] + NIFTY_COMPANIES)
+# Dropdown uses the hardcoded list
+company_input = st.selectbox(UI[LANG]["select"], [""] + sorted(NIFTY_COMPANIES))
 
 counter_box = st.empty()
 counter_box.write(f"Remaining searches today: **{3 - st.session_state.usage_count}/3**")
 
-# Trigger Popup if limit reached
 if st.session_state.usage_count >= 3:
     end_of_session_popup()
     st.stop()
@@ -203,33 +184,22 @@ if st.button(UI[LANG]["btn"]):
     st.session_state.usage_count += 1
     counter_box.write(f"Remaining searches today: **{3 - st.session_state.usage_count}/3**")
 
-    with st.spinner("Scouring the web and analyzing..."):
+    with st.spinner(f"Analyzing {company_input}..."):
         try:
-            script, pos, neg, verd, audio_bytes = analyze_company(company_input, LANG)
+            final_text, final_audio_bytes = analyze_company(company_input, LANG)
             
-            # The UI Table Layout
             st.success("Analysis Complete!")
-            st.audio(audio_bytes, format="audio/mp3", autoplay=True)
-            st.write(script)
+            st.audio(final_audio_bytes, format="audio/mp3", autoplay=True)
             
-            st.markdown("---")
-            col1, col2 = st.columns(2)
-            with col1:
-                st.subheader(UI[LANG]["neg"])
-                st.write(neg)
-            with col2:
-                st.subheader(UI[LANG]["pos"])
-                st.write(pos)
-                
-            st.markdown("---")
-            st.subheader(f"{UI[LANG]['verdict']} **{verd}**")
+            # Print the exact text directly to the screen (No columns, no tables!)
+            st.markdown(final_text)
             
         except Exception as e:
             st.error(f"Error: {e}")
             st.session_state.usage_count -= 1 
             counter_box.write(f"Remaining searches today: **{3 - st.session_state.usage_count}/3**")
 
-# --- INSTANT FEEDBACK POPOVER (BOTTOM OF SCREEN) ---
+# --- INSTANT FEEDBACK POPOVER ---
 st.write("---")
 with st.popover("💬 Have a suggestion? Click here!"):
     st.write("Notice a bug or want a new feature?")
@@ -241,4 +211,3 @@ with st.popover("💬 Have a suggestion? Click here!"):
             st.success("Sent successfully!")
         else:
             st.error("Please fill in all fields.")
-
