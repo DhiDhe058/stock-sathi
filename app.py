@@ -121,24 +121,20 @@ def analyze_company(company_name, language_code):
     except:
         pass 
 
-    # THE NEW PROMPT: Forces AI to split the text perfectly for our UI columns
+    # 💥 THE STRICT PROMPT FIX: Yelling at the AI to follow the rules
     prompt = f"""
     Analyze {company_name} using this news: {news_text} and presentation: {pdf_text}.
     Write entirely in {UI[language_code]['ai_lang']}.
     
-    You MUST format your exact response using these ||| dividers so my code can read it:
+    YOU MUST STRICTLY USE EXACTLY THREE VERTICAL PIPES (|||) TO SEPARATE THE 4 SECTIONS BELOW. DO NOT USE MARKDOWN FORMATTING.
     
-    [Spoken Audio Script: Act as a financial friend. "Analyzing {company_name}..." Keep under 100 words. Plain text only.]
+    [Act as a financial friend. "Analyzing {company_name}..." Keep under 100 words.]
     |||
-    [Positive 1]
-    [Positive 2]
-    [Positive 3]
+    [List 3 Positives simply]
     |||
-    [Red Flag 1]
-    [Red Flag 2]
-    [Red Flag 3]
+    [List 3 Red Flags simply]
     |||
-    [Verdict Tag: High Growth / Stable Growth / Slow Growth]
+    [Verdict: High Growth / Stable Growth / Slow Growth]
     """
     
     summary_text = ""
@@ -152,21 +148,23 @@ def analyze_company(company_name, language_code):
             else:
                 raise e 
 
-    # Parse the AI response into our 4 variables
+    # 💥 THE FALLBACK FIX: If it fails, show the text instead of "Data error."
     try:
         parts = summary_text.split("|||")
-        audio_script = parts[0].strip()
-        positives = parts[1].strip()
-        negatives = parts[2].strip()
-        verdict = parts[3].strip()
-    except:
-        audio_script = summary_text # Fallback if AI hallucinates formatting
-        positives = "Data error."
-        negatives = "Data error."
-        verdict = "Unknown"
+        if len(parts) == 4:
+            audio_script = parts[0].strip()
+            positives = parts[1].strip()
+            negatives = parts[2].strip()
+            verdict = parts[3].strip()
+        else:
+            raise ValueError("AI missed the pipes.")
+    except Exception:
+        audio_script = summary_text.replace("|||", "")
+        positives = "⚠️ AI formatting glitch. Read the full summary above."
+        negatives = "⚠️ AI formatting glitch. Read the full summary above."
+        verdict = "Pending"
 
-    # --- NEW AUDIO FIX ---
-    # Stitch all the parts together so the voice reads everything naturally!
+    # Stitch for audio
     full_text_to_read = f"{audio_script}. {positives}. {negatives}. {verdict}."
     cleaned_text = full_text_to_read.replace("*", "").replace("#", "").replace("_", "").replace("|", "")
     temp_audio_path = f"temp_{company_name.replace(' ', '_')}.mp3"
@@ -180,7 +178,6 @@ def analyze_company(company_name, language_code):
         audio_bytes = f.read()
     os.remove(temp_audio_path)
     
-    # ⚠️ THIS IS THE LINE YOU ARE MISSING! IT MUST BE AT THE VERY END OF THE FUNCTION:
     return audio_script, positives, negatives, verdict, audio_bytes
 
 # --- UI RENDER ---
