@@ -175,6 +175,13 @@ def analyze_company(company_name, language_code):
         communicate = edge_tts.Communicate(cleaned_text, UI[language_code]['voice'])
         await communicate.save(temp_audio_path)
     asyncio.run(generate_audio())
+    
+    with open(temp_audio_path, "rb") as f:
+        audio_bytes = f.read()
+    os.remove(temp_audio_path)
+    
+    # ⚠️ THIS IS THE LINE YOU ARE MISSING! IT MUST BE AT THE VERY END OF THE FUNCTION:
+    return audio_script, positives, negatives, verdict, audio_bytes
 
 # --- UI RENDER ---
 st.title(UI[LANG]["title"])
@@ -237,3 +244,4 @@ with st.popover("💬 Have a suggestion? Click here!"):
             st.success("Sent successfully!")
         else:
             st.error("Please fill in all fields.")
+
