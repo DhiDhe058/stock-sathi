@@ -165,20 +165,16 @@ def analyze_company(company_name, language_code):
         negatives = "Data error."
         verdict = "Unknown"
 
-    # Generate Audio
-    cleaned_text = audio_script.replace("*", "").replace("#", "").replace("_", "")
+    # --- NEW AUDIO FIX ---
+    # Stitch all the parts together so the voice reads everything naturally!
+    full_text_to_read = f"{audio_script}. {positives}. {negatives}. {verdict}."
+    cleaned_text = full_text_to_read.replace("*", "").replace("#", "").replace("_", "").replace("|", "")
     temp_audio_path = f"temp_{company_name.replace(' ', '_')}.mp3"
     
     async def generate_audio():
         communicate = edge_tts.Communicate(cleaned_text, UI[language_code]['voice'])
         await communicate.save(temp_audio_path)
     asyncio.run(generate_audio())
-    
-    with open(temp_audio_path, "rb") as f:
-        audio_bytes = f.read()
-    os.remove(temp_audio_path)
-    
-    return audio_script, positives, negatives, verdict, audio_bytes
 
 # --- UI RENDER ---
 st.title(UI[LANG]["title"])
