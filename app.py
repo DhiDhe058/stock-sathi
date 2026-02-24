@@ -59,14 +59,14 @@ def end_of_session_popup():
             st.rerun()
 
 # --- THE BILINGUAL DICTIONARY ---
-st.set_page_config(page_title="Stock Sathi", page_icon="📈")
+st.set_page_config(page_title="One Minute Scan", page_icon="📈")
 
 is_english = st.toggle("Switch to English / अंग्रेजी में बदलें")
 LANG = "EN" if is_english else "HI"
 
 UI = {
     "HI": {
-        "title": "📈 Stock Sathi",
+        "title": "📈 One Minute Scan",
         "desc": "नीचे दी गई सूची से कंपनी चुनें और हम तुरंत उसका सारांश देंगे।",
         "select": "कंपनी चुनें (Type to search):",
         "btn": "त्वरित सारांश प्राप्त करें",
@@ -75,7 +75,7 @@ UI = {
         "verdict_text": "अंतिम निर्णय"
     },
     "EN": {
-        "title": "📈 Stock Sathi",
+        "title": "📈 One Minute Scan",
         "desc": "Select a company from the list below for a quick summary.",
         "select": "Select Company (Type to search):",
         "btn": "Get Quick Summary",
