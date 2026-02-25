@@ -189,7 +189,7 @@ if st.button(UI[LANG]["btn"]):
             final_text, final_audio_bytes = analyze_company(company_input, LANG)
             
             st.success("Analysis Complete!")
-            st.audio(final_audio_bytes, format="audio/mp3", autoplay=False)
+            st.audio(final_audio_bytes, format="audio/mpeg", autoplay=False)
             
             # Print the exact text directly to the screen (No columns, no tables!)
             st.markdown(final_text)
