@@ -6,3 +6,4 @@ edge-tts
 requests
 st-gsheets-connection
 pandas
+supabase

@@ -41,6 +41,21 @@ def save_feedback(data_dict):
     except Exception as e:
         st.error(f"Could not connect to Google Sheets: {e}")
 
+from supabase import create_client
+
+# --- SUPABASE TEST CONNECTION ---
+try:
+    # Safely load the keys we put in Streamlit Secrets
+    supabase_url = st.secrets["SUPABASE_URL"]
+    supabase_key = st.secrets["SUPABASE_KEY"]
+    supabase = create_client(supabase_url, supabase_key)
+    
+    # Try to read the empty user_usage table
+    response = supabase.table('user_usage').select("*").limit(1).execute()
+    st.sidebar.success("✅ Supabase Connection: Active")
+except Exception as e:
+    st.sidebar.error(f"❌ Supabase Connection Failed: {e}")
+
 # --- DIALOG POPUP (END OF SESSION) ---
 @st.dialog("💬 We need your help! / हमें आपकी मदद चाहिए!")
 def end_of_session_popup():
