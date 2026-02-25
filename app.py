@@ -87,6 +87,17 @@ UI = {
     }
 }
 
+# --- AUTHENTICATION WALL ---
+if not st.user.is_logged_in:
+    st.warning("Please sign in to access the 1-Minute Scan.")
+    # Show the Google login button
+    st.button("Log in with Google", on_click=st.login, args=["google"])
+    st.stop() # This stops the rest of the app from running until they log in!
+else:
+    # If they are logged in, greet them and show a logout button
+    st.sidebar.write(f"👋 Welcome, {st.user.email}!")
+    st.sidebar.button("Log out", on_click=st.logout)
+
 # --- THE ANALYZER (SIMPLIFIED & FOOLPROOF) ---
 @st.cache_data(show_spinner=False)
 def analyze_company(company_name, language_code):
