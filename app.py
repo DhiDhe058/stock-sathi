@@ -10,9 +10,13 @@ import requests
 import io
 import os
 import time
+from supabase import create_client
 from companies import NIFTY_COMPANIES
 
-# --- SECRETS & AI SETUP ---
+# --- 1. PAGE CONFIGURATION (MUST BE FIRST) ---
+st.set_page_config(page_title="One Minute Scan", page_icon="📈")
+
+# --- 2. SECRETS & AI SETUP ---
 try:
     GENAI_API_KEY = st.secrets["GENAI_API_KEY"]
 except:
@@ -24,11 +28,10 @@ model = genai.GenerativeModel('gemini-3-flash-preview')
 if 'usage_count' not in st.session_state:
     st.session_state.usage_count = 0
 
-# --- DATABASE CONNECTION (GOOGLE SHEETS) ---
+# --- 3. DATABASE CONNECTION (GOOGLE SHEETS) ---
 def save_feedback(data_dict):
     try:
         conn = st.connection("gsheets", type=GSheetsConnection)
-        # MAKE SURE YOUR SHEET URL IS STILL IN YOUR SECRETS OR PASTED HERE
         df = conn.read(worksheet="Sheet1")
         new_row = pd.DataFrame([data_dict])
         
@@ -41,28 +44,7 @@ def save_feedback(data_dict):
     except Exception as e:
         st.error(f"Could not connect to Google Sheets: {e}")
 
-from supabase import create_client
-
-# --- DIALOG POPUP (END OF SESSION) ---
-@st.dialog("💬 We need your help! / हमें आपकी मदद चाहिए!")
-def end_of_session_popup():
-    st.write("You have reached your 3-company limit. We are building more features, tell us what you want!")
-    name = st.text_input("Name (Optional)")
-    email = st.text_input("Email (Required)")
-    feedback = st.text_area("Your Feedback (Required)")
-    
-    if st.button("Submit Feedback"):
-        if not email or not feedback:
-            st.error("Please provide both an Email and Feedback.")
-        else:
-            save_feedback({"Type": "Limit Reached", "Company": "N/A", "Name": name, "Email": email, "Feedback": feedback})
-            st.success("Thank you! You can close this window.")
-            time.sleep(2)
-            st.rerun()
-
-# --- THE BILINGUAL DICTIONARY ---
-st.set_page_config(page_title="One Minute Scan", page_icon="📈")
-
+# --- 4. THE BILINGUAL DICTIONARY ---
 is_english = st.toggle("Switch to English / अंग्रेजी में बदलें")
 LANG = "EN" if is_english else "HI"
 
@@ -87,18 +69,16 @@ UI = {
     }
 }
 
-# --- AUTHENTICATION WALL ---
+# --- 5. SIDEBAR AUTHENTICATION ---
 if not st.user.is_logged_in:
-    st.warning("Please sign in to access the 1-Minute Scan.")
-    # Show the Google login button
-    st.button("Log in with Google", on_click=st.login, args=["google"])
-    st.stop() # This stops the rest of the app from running until they log in!
+    st.sidebar.markdown("### 🔒 Unlock More Scans")
+    st.sidebar.write("Sign in to bypass the session limit and get 3 scans every 8 hours.")
+    st.sidebar.button("Log in with Google", on_click=st.login, args=["google"])
 else:
-    # If they are logged in, greet them and show a logout button
-    st.sidebar.write(f"👋 Welcome, {st.user.email}!")
+    st.sidebar.write(f"👋 Welcome, **{st.user.email}**!")
     st.sidebar.button("Log out", on_click=st.logout)
 
-# --- THE ANALYZER (SIMPLIFIED & FOOLPROOF) ---
+# --- 6. THE ANALYZER ---
 @st.cache_data(show_spinner=False)
 def analyze_company(company_name, language_code):
     ddgs = DDGS()
@@ -126,7 +106,6 @@ def analyze_company(company_name, language_code):
     except:
         pass 
 
-    # THE NEW, BULLETPROOF PROMPT
     prompt = f"""
     Analyze {company_name} using this news: {news_text} and presentation: {pdf_text}.
     Write entirely in {UI[language_code]['ai_lang']}.
@@ -160,7 +139,6 @@ def analyze_company(company_name, language_code):
     if not summary_text:
         summary_text = "Analysis failed. Please try again."
 
-    # AUDIO FIX: Strip emojis and bold marks so the voice reads it smoothly
     cleaned_text = summary_text.replace("*", "").replace("✅", "").replace("🚩", "").replace("#", "")
     temp_audio_path = f"temp_{company_name.replace(' ', '_')}.mp3"
     
@@ -175,52 +153,66 @@ def analyze_company(company_name, language_code):
     
     return summary_text, audio_bytes
 
-# --- UI RENDER ---
+# --- 7. MAIN UI RENDER ---
 st.title(UI[LANG]["title"])
 st.write(UI[LANG]["desc"])
 
-# Dropdown uses the hardcoded list
 company_input = st.selectbox(UI[LANG]["select"], [""] + sorted(NIFTY_COMPANIES))
 
+# Show anonymous counter if not logged in
 counter_box = st.empty()
-counter_box.write(f"Remaining searches today: **{3 - st.session_state.usage_count}/3**")
+if not st.user.is_logged_in:
+    counter_box.write(f"Anonymous searches remaining this session: **{3 - st.session_state.usage_count}/3**")
 
-if st.session_state.usage_count >= 3:
-    end_of_session_popup()
-    st.stop()
-
+# --- 8. THE SOFT WALL LOGIC ---
 if st.button(UI[LANG]["btn"]):
     if not company_input:
         st.warning("Please select a company from the list first.")
-        st.stop()
-
-    st.session_state.usage_count += 1
-    counter_box.write(f"Remaining searches today: **{3 - st.session_state.usage_count}/3**")
-
-    with st.spinner(f"Analyzing {company_input}..."):
-        try:
-            final_text, final_audio_bytes = analyze_company(company_input, LANG)
-            
-            st.success("Analysis Complete!")
-            st.audio(final_audio_bytes, format="audio/mpeg", autoplay=False)
-            
-            # Print the exact text directly to the screen (No columns, no tables!)
-            st.markdown(final_text)
-            
-        except Exception as e:
-            st.error(f"Error: {e}")
-            st.session_state.usage_count -= 1 
-            counter_box.write(f"Remaining searches today: **{3 - st.session_state.usage_count}/3**")
-
-# --- INSTANT FEEDBACK POPOVER ---
-st.write("---")
-with st.popover("💬 Have a suggestion? Click here!"):
-    st.write("Notice a bug or want a new feature?")
-    p_email = st.text_input("Your Email", key="p_email")
-    p_fb = st.text_area("Your Thoughts", key="p_fb")
-    if st.button("Send Feedback", key="p_send"):
-        if p_email and p_fb:
-            save_feedback({"Type": "Manual", "Company": "N/A", "Name": "N/A", "Email": p_email, "Feedback": p_fb})
-            st.success("Sent successfully!")
+    else:
+        can_proceed = True 
+        
+        # Check Limits
+        if not st.user.is_logged_in:
+            if st.session_state.usage_count >= 3:
+                st.error("🛑 You have reached your 3 free anonymous scans!")
+                st.warning("Please use the 'Log in with Google' button in the sidebar to continue.")
+                can_proceed = False 
+            else:
+                st.session_state.usage_count += 1
+                counter_box.write(f"Anonymous searches remaining this session: **{3 - st.session_state.usage_count}/3**")
         else:
-            st.error("Please fill in all fields.")
+            st.success("Verifying account limits...")
+            # (Supabase logic will go here!)
+
+        # Run AI if allowed
+        if can_proceed:
+            with st.spinner(f"Analyzing {company_input}..."):
+                try:
+                    final_text, final_audio_bytes = analyze_company(company_input, LANG)
+                    st.success("Analysis Complete!")
+                    st.audio(final_audio_bytes, format="audio/mpeg", autoplay=False)
+                    st.markdown(final_text)
+                except Exception as e:
+                    st.error(f"Error: {e}")
+                    # Refund the scan count if it fails
+                    if not st.user.is_logged_in:
+                        st.session_state.usage_count -= 1 
+                        counter_box.write(f"Anonymous searches remaining this session: **{3 - st.session_state.usage_count}/3**")
+
+# --- 9. PERMANENT FEEDBACK FOOTER ---
+st.markdown("---")
+with st.expander("💬 Have a suggestion? Click here!"):
+    with st.form("permanent_feedback_form"):
+        st.write("Notice a bug or want a new feature? Tell us what you want!")
+        fb_name = st.text_input("Name (Optional)")
+        fb_email = st.text_input("Email (Required)")
+        fb_text = st.text_area("Your Feedback (Required)")
+        
+        submitted = st.form_submit_button("Submit Feedback")
+        
+        if submitted:
+            if fb_email and fb_text:
+                save_feedback({"Name": fb_name, "Email": fb_email, "Feedback": fb_text})
+                st.success("Thank you! Your feedback has been saved.")
+            else:
+                st.error("Please provide both an Email and Feedback.")
